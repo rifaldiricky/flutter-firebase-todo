@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:todo_app/screens/login.dart';
 import '../models/task_model.dart';
-import '../services/storage_service.dart';
+
 import '../widgets/loading_skeleton.dart';
 import 'task_detail_screen.dart';
 
@@ -15,11 +15,7 @@ class TodoScreen extends StatefulWidget {
 }
 
 class _TodoScreenState extends State<TodoScreen> {
-  final user = FirebaseAuth.instance.currentUser;
-  List<Task> tasks = [];
-  bool loading = true;
-  bool editMode = false;
-  bool deleteMode = false;
+  final User? user = FirebaseAuth.instance.currentUser;
   int currentTab = 0;
 
   final TextEditingController titleController = TextEditingController();
@@ -28,31 +24,15 @@ class _TodoScreenState extends State<TodoScreen> {
   @override
   void initState() {
     super.initState();
-
-    Future.delayed(Duration.zero, () => loadTasks());
   }
 
-  Future<void> loadTasks() async {
-    try {
-      final data = await StorageService.loadTasks();
-      if (!mounted) return;
-      setState(() {
-        tasks = data;
-        loading = false;
-      });
-    } catch (e) {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  void addTask() async {
-    if (titleController.text.trim().isEmpty) return;
-
+  Future<void> addTask() async {
+    if (user == null || titleController.text.trim().isEmpty) return;
     try {
       await FirebaseFirestore.instance
           .collection('todos')
           .doc(user!.uid)
-          .collection(user!.email!)
+          .collection(user!.email ?? 'tasks')
           .add({
             'title': titleController.text,
             'description': descController.text,
@@ -64,15 +44,16 @@ class _TodoScreenState extends State<TodoScreen> {
       titleController.clear();
       descController.clear();
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Gagal simpan ke Cloud: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Gagal simpan ke Cloud: $e")));
+      }
     }
   }
 
   void deleteTask(String docId) {
+    if (user?.email == null) return;
     FirebaseFirestore.instance
         .collection('todos')
         .doc(user!.uid)
@@ -82,12 +63,11 @@ class _TodoScreenState extends State<TodoScreen> {
   }
 
   void toggleTask(String docId, bool currentStatus) {
-    final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     FirebaseFirestore.instance
         .collection('todos')
-        .doc(user.uid)
+        .doc(user!.uid)
         .collection(user!.email!)
         .doc(docId)
         .update({'completed': !currentStatus});
@@ -104,7 +84,7 @@ class _TodoScreenState extends State<TodoScreen> {
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
 
-              if (!context.mounted) return;
+              if (!mounted) return;
 
               Navigator.pushAndRemoveUntil(
                 context,
@@ -119,23 +99,19 @@ class _TodoScreenState extends State<TodoScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('todos')
-            .doc(user!.uid)
-            .collection(user!.email!)
+            .doc(user?.uid)
+            .collection(user?.email ?? 'tasks')
             .orderBy('timestamp', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          // 1. Cek Error
           if (snapshot.hasError) return const Center(child: Text("Error"));
 
-          // 2. Cek Loading (HARUS return widget agar kode di bawahnya tidak jalan dulu)
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const LoadingSkeleton();
           }
 
-          // 3. Ambil data (Sekarang variabel docs aman digunakan di seluruh blok di bawah ini)
           final docs = snapshot.data?.docs ?? [];
 
-          // 4. Logika Filter menggunakan variabel docs yang sudah didefinisikan tadi
           var filteredDocs = docs;
           if (currentTab == 1) {
             filteredDocs = docs.where((d) => d['completed'] == false).toList();
@@ -151,12 +127,7 @@ class _TodoScreenState extends State<TodoScreen> {
             itemCount: filteredDocs.length,
             itemBuilder: (context, index) {
               final doc = filteredDocs[index];
-              final data =
-                  doc.data()
-                      as Map<
-                        String,
-                        dynamic
-                      >; // Typo 'dinamic' sudah diperbaiki ke 'dynamic'
+              final data = doc.data() as Map<String, dynamic>;
 
               final task = Task(
                 id: doc.id,

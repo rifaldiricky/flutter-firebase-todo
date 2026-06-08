@@ -14,18 +14,50 @@ class _LoginState extends State<Login> {
   final TextEditingController email = TextEditingController();
   final TextEditingController password = TextEditingController();
 
+  bool isLoading = false;
+
   Future<void> signIn() async {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email.text,
-      password: password.text,
-    );
+    if (email.text.isEmpty || password.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("masukkan email dan password")),
+      );
+      return;
+    }
 
-    if (!mounted) return;
+    setState(() => isLoading = true);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const TodoScreen()),
-    );
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.text,
+        password: password.text,
+      );
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const TodoScreen()),
+      );
+    } on FirebaseAuthException catch (e) {
+      String massage = "Terjadi kesalahan";
+      if (e.code == 'user-not-found') {
+        massage = "Email tidak terdaftar";
+      } else if (e.code == 'wrong-password') {
+        massage = "Password salah";
+      } else if (e.code == 'invalid-email') {
+        massage = "Email salah";
+      } else if (e.code == 'network-request-failed') {
+        massage = "Koneksi anda bermasalah";
+      } else if (e.code == 'invalid-credential') {
+        massage = "email atau password salah";
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(massage), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   @override
@@ -44,19 +76,32 @@ class _LoginState extends State<Login> {
               controller: password,
               decoration: InputDecoration(hintText: 'Enter password'),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(shape: const StadiumBorder()),
-              onPressed: (() => signIn()),
-              child: Text("Login"),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : signIn,
+                child: isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text("Login"),
+              ),
             ),
-            TextButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SignUp()),
-                );
-              },
-              child: const Text("Sign up"),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const SignUp()),
+                  );
+                },
+                child: const Text("Sign up"),
+              ),
             ),
           ],
         ),
